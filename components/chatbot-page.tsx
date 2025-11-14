@@ -5,7 +5,7 @@ import type React from "react"
 import { useState, useRef, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { Send, Menu, X, Settings, Moon, LogOut, Plus, Upload, Trash2 } from "lucide-react"
+import { Send, Menu, X, Settings, Moon, LogOut, Plus, Upload, Trash2, Mic } from 'lucide-react'
 
 interface ChatMessage {
   id: string
@@ -234,8 +234,7 @@ export function ChatbotPage({ userInfo, onLogout }: ChatbotPageProps) {
         </div>
       </div>
 
-      {/* Main Content */}
-      <div className="flex-1 flex flex-col">
+      <div className={`flex-1 flex flex-col transition-all duration-300 ${showSettings ? "blur-sm" : ""}`}>
         {/* Header */}
         <div
           className={`flex items-center justify-between px-6 py-4 border-b ${
@@ -323,15 +322,52 @@ export function ChatbotPage({ userInfo, onLogout }: ChatbotPageProps) {
         {/* Input Area */}
         <div className={`px-6 py-4 border-t ${darkMode ? "bg-gray-800 border-gray-700" : "bg-white border-gray-200"}`}>
           <form onSubmit={handleSendMessage} className="space-y-3">
-            <div className="flex gap-2 flex-wrap">
+            {uploadedFiles.length > 0 && (
+              <div className="flex gap-2 flex-wrap">
+                {uploadedFiles.map((file, idx) => (
+                  <div
+                    key={idx}
+                    className="px-3 py-1 rounded-full bg-teal-100 text-teal-700 text-xs flex items-center gap-2"
+                  >
+                    📎 {file}
+                    <button
+                      type="button"
+                      onClick={() => setUploadedFiles((prev) => prev.filter((_, i) => i !== idx))}
+                      className="hover:text-teal-900"
+                    >
+                      ×
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <div className="flex gap-2 items-center">
               <button
                 type="button"
                 onClick={() => fileInputRef.current?.click()}
-                className="flex items-center gap-2 px-3 py-2 rounded-lg bg-gray-100 hover:bg-gray-200 text-gray-700 text-sm transition-colors"
+                className={`p-2.5 rounded-lg transition-colors ${
+                  darkMode
+                    ? "bg-gray-700 hover:bg-gray-600 text-gray-300"
+                    : "bg-gray-100 hover:bg-gray-200 text-gray-700"
+                }`}
+                title="Upload document"
               >
-                <Upload className="w-4 h-4" />
-                Upload document
+                <Upload className="w-5 h-5" />
               </button>
+
+              <button
+                type="button"
+                className={`p-3 rounded-lg transition-colors transform hover:scale-110 ${
+                  darkMode
+                    ? "bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white shadow-lg shadow-blue-500/50"
+                    : "bg-gradient-to-r from-blue-500 to-purple-500 hover:from-blue-600 hover:to-purple-600 text-white shadow-lg shadow-blue-400/50"
+                }`}
+                title="Voice recognition"
+              >
+                <Mic className="w-6 h-6" />
+              </button>
+
               <input
                 ref={fileInputRef}
                 type="file"
@@ -340,28 +376,7 @@ export function ChatbotPage({ userInfo, onLogout }: ChatbotPageProps) {
                 className="hidden"
                 accept=".pdf,.doc,.docx,.txt,.png,.jpg,.jpeg"
               />
-              {uploadedFiles.length > 0 && (
-                <div className="flex gap-2 flex-wrap">
-                  {uploadedFiles.map((file, idx) => (
-                    <div
-                      key={idx}
-                      className="px-3 py-1 rounded-full bg-teal-100 text-teal-700 text-xs flex items-center gap-2"
-                    >
-                      📎 {file}
-                      <button
-                        type="button"
-                        onClick={() => setUploadedFiles((prev) => prev.filter((_, i) => i !== idx))}
-                        className="hover:text-teal-900"
-                      >
-                        ×
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
 
-            <div className="flex gap-3">
               <Input
                 type="text"
                 placeholder="Message our AI support assistant..."
@@ -388,12 +403,14 @@ export function ChatbotPage({ userInfo, onLogout }: ChatbotPageProps) {
 
       {showSettings && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className={`${darkMode ? "bg-gray-800" : "bg-white"} rounded-2xl p-8 max-w-md w-full mx-4`}>
+          <div className={`${darkMode ? "bg-gray-800" : "bg-white"} rounded-2xl p-8 max-w-md w-full mx-4 shadow-2xl`}>
             <div className="flex items-center justify-between mb-6">
               <h2 className={`text-2xl font-bold ${darkMode ? "text-white" : "text-gray-900"}`}>Settings</h2>
               <button
                 onClick={() => setShowSettings(false)}
-                className={`p-2 rounded-lg ${darkMode ? "hover:bg-gray-700" : "hover:bg-gray-100"}`}
+                className={`p-2 rounded-lg transition-colors ${
+                  darkMode ? "hover:bg-gray-700 text-gray-300" : "hover:bg-gray-100 text-gray-700"
+                }`}
               >
                 <X className="w-5 h-5" />
               </button>
