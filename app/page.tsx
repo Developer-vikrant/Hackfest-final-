@@ -1,8 +1,8 @@
 "use client"
 
-import { useState } from "react"
 import { LoginPage } from "@/components/login-page"
 import { ChatbotPage } from "@/components/chatbot-page"
+import { useState } from "react"
 
 export default function Home() {
   const [isLoggedIn, setIsLoggedIn] = useState(false)

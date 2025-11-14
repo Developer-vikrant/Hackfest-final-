@@ -6,6 +6,9 @@ import { useState, useRef, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Send, Menu, X, Settings, Moon, LogOut, Plus, Upload, Trash2, Mic } from 'lucide-react'
+import { useToast } from "@/hooks/use-toast"
+
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"
 
 interface ChatMessage {
   id: string
@@ -37,6 +40,7 @@ export function ChatbotPage({ userInfo, onLogout }: ChatbotPageProps) {
   const [uploadedFiles, setUploadedFiles] = useState<string[]>([])
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const { toast } = useToast()
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
@@ -47,8 +51,46 @@ export function ChatbotPage({ userInfo, onLogout }: ChatbotPageProps) {
   }, [messages])
 
   useEffect(() => {
-    handleNewChat()
+    loadChatHistories()
   }, [])
+
+  const loadChatHistories = async () => {
+    try {
+      const response = await fetch(`${API_URL}/chat-histories/${userInfo?.id}`)
+      if (!response.ok) throw new Error("Failed to load chat histories")
+
+      const histories = await response.json()
+      
+      const sessions = await Promise.all(
+        histories.map(async (history: any) => {
+          const messagesResponse = await fetch(
+            `${API_URL}/chat-histories/${history.id}/messages`
+          )
+          const messagesData = await messagesResponse.json()
+
+          return {
+            id: history.id.toString(),
+            title: history.title,
+            messages: messagesData.messages.map((msg: any) => ({
+              id: msg.id.toString(),
+              text: msg.content,
+              sender: msg.role === "assistant" ? "bot" : "user",
+              timestamp: new Date(msg.created_at),
+            })),
+          }
+        })
+      )
+
+      setChatSessions(sessions)
+      if (sessions.length > 0) {
+        setCurrentChatId(sessions[0].id)
+        setMessages(sessions[0].messages)
+      }
+    } catch (error) {
+      console.error("Error loading chat histories:", error)
+      handleNewChat()
+    }
+  }
 
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -63,19 +105,29 @@ export function ChatbotPage({ userInfo, onLogout }: ChatbotPageProps) {
 
     const updatedMessages = [...messages, userMessage]
     setMessages(updatedMessages)
+    const messageText = inputValue
     setInputValue("")
     setIsLoading(true)
 
-    // Update current chat session
-    setChatSessions((prev) =>
-      prev.map((chat) => (chat.id === currentChatId ? { ...chat, messages: updatedMessages } : chat)),
-    )
+    try {
+      const saveResponse = await fetch(
+        `${API_URL}/chat-histories/${currentChatId}/messages`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            role: "user",
+            content: messageText,
+          }),
+        }
+      )
 
-    // Simulate API call to your backend
-    setTimeout(() => {
+      if (!saveResponse.ok) throw new Error("Failed to save message")
+
+      // Simulate bot response
       const botMessage: ChatMessage = {
         id: (Date.now() + 1).toString(),
-        text: `Thank you for your message: "${inputValue}". Our AI support team is analyzing your request and will provide a solution shortly. In the meantime, you can share any additional details or upload documents to help us assist you faster.`,
+        text: `Thank you for your message: "${messageText}". Our AI support team is analyzing your request and will provide a solution shortly. In the meantime, you can share any additional details or upload documents to help us assist you faster.`,
         sender: "bot",
         timestamp: new Date(),
       }
@@ -83,25 +135,59 @@ export function ChatbotPage({ userInfo, onLogout }: ChatbotPageProps) {
       const finalMessages = [...updatedMessages, botMessage]
       setMessages(finalMessages)
 
-      // Update chat session with bot message
-      setChatSessions((prev) =>
-        prev.map((chat) => (chat.id === currentChatId ? { ...chat, messages: finalMessages } : chat)),
-      )
+      await fetch(`${API_URL}/chat-histories/${currentChatId}/messages`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          role: "assistant",
+          content: botMessage.text,
+        }),
+      })
 
+      setChatSessions((prev) =>
+        prev.map((chat) =>
+          chat.id === currentChatId ? { ...chat, messages: finalMessages } : chat
+        )
+      )
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Failed to send message",
+        variant: "destructive",
+      })
+    } finally {
       setIsLoading(false)
-    }, 1000)
+    }
   }
 
-  const handleNewChat = () => {
-    const newChatId = Date.now().toString()
-    const newChat: ChatSession = {
-      id: newChatId,
-      title: `Chat ${chatSessions.length + 1}`,
-      messages: [],
+  const handleNewChat = async () => {
+    try {
+      const response = await fetch(`${API_URL}/chat-histories`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ user_id: userInfo?.id }),
+      })
+
+      if (!response.ok) throw new Error("Failed to create chat")
+
+      const newChatData = await response.json()
+      
+      const newChat: ChatSession = {
+        id: newChatData.id.toString(),
+        title: newChatData.title,
+        messages: [],
+      }
+
+      setChatSessions((prev) => [newChat, ...prev])
+      setCurrentChatId(newChat.id)
+      setMessages([])
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Failed to create new chat",
+        variant: "destructive",
+      })
     }
-    setChatSessions((prev) => [newChat, ...prev])
-    setCurrentChatId(newChatId)
-    setMessages([])
   }
 
   const handleSelectChat = (chatId: string) => {
@@ -112,15 +198,29 @@ export function ChatbotPage({ userInfo, onLogout }: ChatbotPageProps) {
     }
   }
 
-  const handleDeleteChat = (chatId: string) => {
-    setChatSessions((prev) => prev.filter((chat) => chat.id !== chatId))
-    if (currentChatId === chatId) {
-      const remaining = chatSessions.filter((chat) => chat.id !== chatId)
-      if (remaining.length > 0) {
-        handleSelectChat(remaining[0].id)
-      } else {
-        handleNewChat()
+  const handleDeleteChat = async (chatId: string) => {
+    try {
+      const response = await fetch(`${API_URL}/chat-histories/${chatId}`, {
+        method: "DELETE",
+      })
+
+      if (!response.ok) throw new Error("Failed to delete chat")
+
+      setChatSessions((prev) => prev.filter((chat) => chat.id !== chatId))
+      if (currentChatId === chatId) {
+        const remaining = chatSessions.filter((chat) => chat.id !== chatId)
+        if (remaining.length > 0) {
+          handleSelectChat(remaining[0].id)
+        } else {
+          handleNewChat()
+        }
       }
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Failed to delete chat",
+        variant: "destructive",
+      })
     }
   }
 
@@ -130,7 +230,6 @@ export function ChatbotPage({ userInfo, onLogout }: ChatbotPageProps) {
       Array.from(files).forEach((file) => {
         setUploadedFiles((prev) => [...prev, file.name])
 
-        // Add file message to chat
         const fileMessage: ChatMessage = {
           id: Date.now().toString(),
           text: `📎 Document uploaded: ${file.name}`,
@@ -141,9 +240,10 @@ export function ChatbotPage({ userInfo, onLogout }: ChatbotPageProps) {
         const updatedMessages = [...messages, fileMessage]
         setMessages(updatedMessages)
 
-        // Update chat session
         setChatSessions((prev) =>
-          prev.map((chat) => (chat.id === currentChatId ? { ...chat, messages: updatedMessages } : chat)),
+          prev.map((chat) =>
+            chat.id === currentChatId ? { ...chat, messages: updatedMessages } : chat
+          )
         )
       })
     }
@@ -151,13 +251,12 @@ export function ChatbotPage({ userInfo, onLogout }: ChatbotPageProps) {
 
   return (
     <div className={`flex h-screen ${darkMode ? "bg-gray-900" : "bg-white"}`}>
-      {/* Sidebar */}
+      {/* ... existing sidebar and main content ... */}
       <div
         className={`${sidebarOpen ? "w-64" : "w-0"} transition-all duration-300 ease-in-out ${
           darkMode ? "bg-gray-800" : "bg-gray-50"
         } border-r ${darkMode ? "border-gray-700" : "border-gray-200"} overflow-hidden flex flex-col`}
       >
-        {/* New Chat Button */}
         <div className="p-4">
           <Button
             onClick={handleNewChat}
@@ -168,7 +267,6 @@ export function ChatbotPage({ userInfo, onLogout }: ChatbotPageProps) {
           </Button>
         </div>
 
-        {/* Chat History */}
         <div className="flex-1 overflow-y-auto px-4 space-y-2">
           {chatSessions.length > 0 && (
             <div className="text-xs text-gray-500 font-semibold mb-4 uppercase">Chat History</div>
@@ -201,7 +299,6 @@ export function ChatbotPage({ userInfo, onLogout }: ChatbotPageProps) {
           ))}
         </div>
 
-        {/* Bottom Actions */}
         <div className={`p-4 border-t ${darkMode ? "border-gray-700" : "border-gray-200"} space-y-2`}>
           <Button
             variant="ghost"
@@ -235,7 +332,6 @@ export function ChatbotPage({ userInfo, onLogout }: ChatbotPageProps) {
       </div>
 
       <div className={`flex-1 flex flex-col transition-all duration-300 ${showSettings ? "blur-sm" : ""}`}>
-        {/* Header */}
         <div
           className={`flex items-center justify-between px-6 py-4 border-b ${
             darkMode ? "bg-gray-800 border-gray-700" : "bg-white border-gray-200"
@@ -257,7 +353,6 @@ export function ChatbotPage({ userInfo, onLogout }: ChatbotPageProps) {
           <div className={`text-sm ${darkMode ? "text-gray-400" : "text-gray-600"}`}>Welcome, {userInfo?.name}</div>
         </div>
 
-        {/* Chat Area */}
         <div className="flex-1 overflow-y-auto p-6 space-y-4">
           {messages.length === 0 ? (
             <div className="h-full flex flex-col items-center justify-center gap-4">
@@ -319,7 +414,6 @@ export function ChatbotPage({ userInfo, onLogout }: ChatbotPageProps) {
           )}
         </div>
 
-        {/* Input Area */}
         <div className={`px-6 py-4 border-t ${darkMode ? "bg-gray-800 border-gray-700" : "bg-white border-gray-200"}`}>
           <form onSubmit={handleSendMessage} className="space-y-3">
             {uploadedFiles.length > 0 && (
@@ -416,7 +510,6 @@ export function ChatbotPage({ userInfo, onLogout }: ChatbotPageProps) {
               </button>
             </div>
 
-            {/* User Information */}
             <div className="space-y-4">
               <div>
                 <label className={`block text-sm font-semibold ${darkMode ? "text-gray-300" : "text-gray-700"} mb-2`}>
@@ -440,7 +533,7 @@ export function ChatbotPage({ userInfo, onLogout }: ChatbotPageProps) {
                     darkMode ? "bg-gray-700 text-gray-100" : "bg-gray-100 text-gray-900"
                   }`}
                 >
-                  {userInfo?.contact || "N/A"}
+                  {userInfo?.phone_number || "N/A"}
                 </div>
               </div>
 

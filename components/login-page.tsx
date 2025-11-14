@@ -1,7 +1,10 @@
 "use client"
 import { VerificationForm } from "@/components/verification-form"
 import { useState } from "react"
-import { Lock, CheckCircle2, Headset, MessageSquare, PhoneCall } from "lucide-react"
+import { Lock, CheckCircle2, Headset, MessageSquare, PhoneCall } from 'lucide-react'
+import { useToast } from "@/hooks/use-toast"
+
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"
 
 interface LoginPageProps {
   onLoginSuccess: (userInfo: any) => void
@@ -9,14 +12,52 @@ interface LoginPageProps {
 
 export function LoginPage({ onLoginSuccess }: LoginPageProps) {
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const { toast } = useToast()
 
   const handleVerify = async (data: { name: string; contact: string; email: string }) => {
     setIsSubmitting(true)
     try {
-      await new Promise((resolve) => setTimeout(resolve, 1500))
+      const response = await fetch(`${API_URL}/validate-users`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          name: data.name,
+          email: data.email,
+          phone_number: data.contact,
+        }),
+      })
 
-      onLoginSuccess(data)
+      if (!response.ok) {
+        const errorData = await response.json()
+        const errorMessage = Array.isArray(errorData.detail)
+          ? errorData.detail.join(", ")
+          : errorData.detail || "Verification failed"
+        throw new Error(errorMessage)
+      }
+
+      const result = await response.json()
+      
+      toast({
+        title: "Success",
+        description: "User verified successfully!",
+      })
+
+      onLoginSuccess({
+        id: result.id,
+        name: result.name,
+        email: result.email,
+        phone_number: result.phone_number,
+        contact: data.contact,
+      })
     } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : "Verification failed. Please try again."
+      toast({
+        title: "Error",
+        description: errorMessage,
+        variant: "destructive",
+      })
       throw error
     } finally {
       setIsSubmitting(false)
